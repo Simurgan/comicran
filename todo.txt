@@ -1,0 +1,4 @@
+1. Fix the bug in the cfg_maker.c that causes syntax errors in the output file.
+2. Add the functionality checks directories of the dependencies whether they are symlinks too and add them to the symlink list beforehand cfg_maker.c 
+3. Add the functionality copies executables automatically to cfg_maker.c
+4. Add the functionality reading base config file instead of prompting user to cfg_maker.c
