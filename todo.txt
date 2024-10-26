@@ -1,4 +1,17 @@
-1. Fix the bug in the cfg_maker.c that causes syntax errors in the output file.
-2. Add the functionality checks directories of the dependencies whether they are symlinks too and add them to the symlink list beforehand cfg_maker.c 
-3. Add the functionality copies executables automatically to cfg_maker.c
-4. Add the functionality reading base config file instead of prompting user to cfg_maker.c
+[x] 1. Fix the bug in the cfg_maker.c that causes syntax errors in the output file.
+[ ] 2. Add the functionality checks directories of the dependencies whether they are symlinks too and add them to the symlink list beforehand cfg_maker.c 
+[x] 3. Add the functionality copies executables automatically to cfg_maker.c
+[x] 4. Add the functionality reading base config file instead of prompting user to cfg_maker.c
+[ ] 5. Step 2 is almost done as in cfg_maker_v3/cfg_maker3_2 but there is a bug. Resolve the bug, make sure the program works perfectly.
+    [ ] a. The program should read root_dir from input config file.
+    [ ] b. The program should read root_process from input config file.
+    [ ] c. The program should read the directories list from the input config file and should add the directory paths read to the directories array.
+        [ ] I. The program should consider hierarchy in the paths and add the path of the every nested parent directory to the list.
+        [ ] II. The program shouldn't add any duplicates to the array.
+    [ ] d. The program should check if there is an executables list in the input file and add items in it to the executables array if it is not empty.
+    [ ] e. The program should add the root_process read from the input config file and add it to the end of the executables array if it is not already in there.
+    
+    // Re-write below to check symlinks etc. And continue writing this algorithm later.
+    [ ] g. The program should read the file_copies list from the input config file and add items in it to the file_copies array.
+    [ ] f. The program should add all of the dependencies of each executable in the executable array to the dependencies array.
+        [ ] I. The program should not add any duplicates to the array.

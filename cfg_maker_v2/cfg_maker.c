@@ -4,6 +4,7 @@
 #include <string.h>
 #include <limits.h>
 #include <unistd.h>
+#include <libconfig.h>
 
 #define MAX_DEPENDENCIES 128
 #define MAX_STRING_LENGTH 512
@@ -37,7 +38,7 @@ int add_unique_file_copy(FileCopy file_copies[MAX_FILE_COPIES], int *count, cons
             return 0; // Path already exists
         }
     }
-    if (*count < MAX_DEPENDENCIES) {
+    if (*count < MAX_FILE_COPIES) {
         strncpy(file_copies[*count].src, new_file_copy_src, PATH_MAX - 1);
         strncpy(file_copies[*count].dst, new_file_copy_dst, PATH_MAX - 1);
         (*count)++;
@@ -53,65 +54,84 @@ int add_unique_symlink(Symlink symlinks[MAX_SYMLINKS], int *count, const char *n
             return 0; // Path already exists
         }
     }
-    if (*count < MAX_DEPENDENCIES) {
+    if (*count < MAX_SYMLINKS) {
         strncpy(symlinks[*count].sym, new_symlink_sym, PATH_MAX - 1);
         strncpy(symlinks[*count].dst, new_symlink_dst, PATH_MAX - 1);
         (*count)++;
-
         return 1; // Path added successfully
     }
-
     return 0; // No space to add
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <config_file_name>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <input_config_file> <output_config_file>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    const char *config_file_name = argv[1];
+    const char *input_config_file = argv[1];
+    const char *output_config_file = argv[2];
 
-    // Prompt user for configuration details
-    char root_dir[PATH_MAX];
-    char process[PATH_MAX];
-    char directories[MAX_DEPENDENCIES][PATH_MAX];
-    int dir_count = 0;
+    // Initialize libconfig
+    config_t cfg;
+    config_init(&cfg);
 
-    printf("Enter root_dir: ");
-    fgets(root_dir, sizeof(root_dir), stdin);
-    root_dir[strcspn(root_dir, "\n")] = '\0'; // Remove newline
-
-    printf("Enter process: ");
-    fgets(process, sizeof(process), stdin);
-    process[strcspn(process, "\n")] = '\0'; // Remove newline
-
-    printf("Enter directories (comma-separated): ");
-    char dir_input[MAX_STRING_LENGTH];
-    fgets(dir_input, sizeof(dir_input), stdin);
-    char *token = strtok(dir_input, ",");
-    while (token != NULL && dir_count < MAX_DEPENDENCIES) {
-        strncpy(directories[dir_count], token, PATH_MAX - 1);
-        directories[dir_count][(int)strlen(token)] = '\0'; // Null-terminate
-        if(directories[dir_count][(int)strlen(token) - 1] == '\n') {
-            directories[dir_count][(int)strlen(token) - 1] = '\0'; // Null-terminate
-        }
-        dir_count++;
-        token = strtok(NULL, ",");
+    // Read the input configuration file
+    if (!config_read_file(&cfg, input_config_file)) {
+        fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+                config_error_line(&cfg), config_error_text(&cfg));
+        config_destroy(&cfg);
+        return (EXIT_FAILURE);
     }
 
-    // Get executable paths
+    // Get root_dir and process
+    const char *root_dir;
+    const char *process;
+    if (!config_lookup_string(&cfg, "root_dir", &root_dir)) {
+        fprintf(stderr, "No 'root_dir' setting in configuration file.\n");
+        config_destroy(&cfg);
+        return (EXIT_FAILURE);
+    }
+    if (!config_lookup_string(&cfg, "process", &process)) {
+        fprintf(stderr, "No 'process' setting in configuration file.\n");
+        config_destroy(&cfg);
+        return (EXIT_FAILURE);
+    }
+
+    // Get directories
+    char directories[MAX_DEPENDENCIES][PATH_MAX];
+    int dir_count = 0;
+    config_setting_t *directories_setting = config_lookup(&cfg, "directories");
+    if (directories_setting != NULL) {
+        int count = config_setting_length(directories_setting);
+        for (int i = 0; i < count && dir_count < MAX_DEPENDENCIES; i++) {
+            const char *dir = config_setting_get_string_elem(directories_setting, i);
+            strncpy(directories[dir_count], dir, PATH_MAX - 1);
+            directories[dir_count][PATH_MAX - 1] = '\0'; // Null-terminate
+            dir_count++;
+        }
+    } else {
+        fprintf(stderr, "No 'directories' setting in configuration file.\n");
+        config_destroy(&cfg);
+        return (EXIT_FAILURE);
+    }
+
+    // Get executables
     char executables[MAX_DEPENDENCIES][PATH_MAX];
     int exec_count = 0;
-    printf("Enter paths of executables (comma-separated): ");
-    char exec_input[MAX_STRING_LENGTH];
-    fgets(exec_input, sizeof(exec_input), stdin);
-    token = strtok(exec_input, ",");
-    while (token != NULL && exec_count < MAX_DEPENDENCIES) {
-        strncpy(executables[exec_count], token, PATH_MAX - 1);
-        executables[exec_count][PATH_MAX - 1] = '\0'; // Null-terminate
-        exec_count++;
-        token = strtok(NULL, ",");
+    config_setting_t *executables_setting = config_lookup(&cfg, "executables");
+    if (executables_setting != NULL) {
+        int count = config_setting_length(executables_setting);
+        for (int i = 0; i < count && exec_count < MAX_DEPENDENCIES; i++) {
+            const char *exe = config_setting_get_string_elem(executables_setting, i);
+            strncpy(executables[exec_count], exe, PATH_MAX - 1);
+            executables[exec_count][PATH_MAX - 1] = '\0'; // Null-terminate
+            exec_count++;
+        }
+    } else {
+        fprintf(stderr, "No 'executables' setting in configuration file.\n");
+        config_destroy(&cfg);
+        return (EXIT_FAILURE);
     }
 
     // Gather dependencies
@@ -120,7 +140,6 @@ int main(int argc, char **argv) {
     Symlink symlinks[MAX_SYMLINKS];
     int symlink_count = 0;
 
-    int count = 0;
     for (int i = 0; i < exec_count; i++) {
         char command[256];
         snprintf(command, sizeof(command), "LD_TRACE_LOADED_OBJECTS=1 %s", executables[i]);
@@ -147,7 +166,8 @@ int main(int argc, char **argv) {
             // Check if the line contains "=>"
             char *arrow_pos = strstr(start, "=>");
             if (arrow_pos != NULL) {
-                path = arrow_pos + 3; // Skip "=> "
+                path = arrow_pos + 2; // Skip "=>"
+                while (isspace((unsigned char)*path)) path++;
             } else if (start[0] == '/') {
                 path = start;
             }
@@ -173,44 +193,10 @@ int main(int argc, char **argv) {
         pclose(fp);
     }
 
-    // Gather file copy information
-    char add_file_copy;
-
-    do {
-        if (file_copy_count >= MAX_FILE_COPIES) break;
-
-        printf("Would you like to add a file copy? (y/n): ");
-        scanf(" %c", &add_file_copy);
-        if (add_file_copy == 'y' || add_file_copy == 'Y') {
-            printf("Enter source path: ");
-            scanf("%s", file_copies[file_copy_count].src);
-            printf("Enter destination path: ");
-            scanf("%s", file_copies[file_copy_count].dst);
-            file_copy_count++;
-        }
-    } while (add_file_copy == 'y' || add_file_copy == 'Y');
-
-    // Gather symlink information
-    char add_symlink;
-
-    do {
-        if (symlink_count >= MAX_SYMLINKS) break;
-
-        printf("Would you like to add a symlink? (y/n): ");
-        scanf(" %c", &add_symlink);
-        if (add_symlink == 'y' || add_symlink == 'Y') {
-            printf("Enter symlink path: ");
-            scanf("%s", symlinks[symlink_count].sym);
-            printf("Enter destination path: ");
-            scanf("%s", symlinks[symlink_count].dst);
-            symlink_count++;
-        }
-    } while (add_symlink == 'y' || add_symlink == 'Y');
-
-    // Write to the configuration file
-    FILE *config_file = fopen(config_file_name, "w");
+    // Write to the output configuration file
+    FILE *config_file = fopen(output_config_file, "w");
     if (config_file == NULL) {
-        perror("Error opening config file");
+        perror("Error opening output config file");
         return EXIT_FAILURE;
     }
 
@@ -237,14 +223,15 @@ int main(int argc, char **argv) {
     // Write symlinks
     fprintf(config_file, "\nsymlinks = (\n");
     for (int i = 0; i < symlink_count; i++) {
-        fprintf(config_file, "\t{\n\t\tsym = \"%s\",\n\t\tdst = \"%s\"\n\t},\n", symlinks[i].sym, symlinks[i].dst);
-        if(i < symlink_count - 1) fprintf(config_file, ",");
+        fprintf(config_file, "\t{\n\t\tsym = \"%s\",\n\t\tdst = \"%s\"\n\t}", symlinks[i].sym, symlinks[i].dst);
+        if (i < symlink_count - 1) fprintf(config_file, ",");
         fprintf(config_file, "\n");
     }
     fprintf(config_file, ")\n");
 
     fclose(config_file);
-    printf("Configuration written to %s\n", config_file_name);
+    printf("Configuration written to %s\n", output_config_file);
 
+    config_destroy(&cfg);
     return 0;
 }
