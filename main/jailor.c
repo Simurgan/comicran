@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <string.h>
+#include <errno.h>
 
 #define STACK_SIZE (1024 * 1024) // Stack size for the child process
 
@@ -21,33 +23,82 @@ void check_error(int ret, const char *msg) {
   }
 }
 
+// Function to create a directory and its parent directories if they do not exist
+void create_directory(const char *path) {
+    char temp[256];
+    char *p = NULL;
+    size_t len;
+
+    // Copy path to a temporary variable
+    snprintf(temp, sizeof(temp), "%s/", path);
+    len = strlen(temp);
+
+    // Create each directory in the path
+    for (p = temp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';  // Temporarily null-terminate
+            if (mkdir(temp, 0755) == -1 && errno != EEXIST) {
+                perror("Error creating directory");
+                exit(EXIT_FAILURE);
+            }
+            *p = '/';  // Restore the null-terminator
+        }
+    }
+}
+
 // Function to copy a file into the sandbox
 void copy_file(const char *src, const char *dest) {
-  // Check if the destination file already exists
-  struct stat buffer_stat;
-  if (stat(dest, &buffer_stat) == 0) {
-    printf("File '%s' already exists. Skipping copy.\n", dest);
-    return; // Exit the function if the file exists
-  }
-
-  int source_fd = open(src, O_RDONLY);
-  check_error(source_fd, "open source file");
-
-  int dest_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0755);
-  check_error(dest_fd, "open dest file");
-
-  char buffer[4096];
-  ssize_t bytes_read, bytes_written;
-  while ((bytes_read = read(source_fd, buffer, sizeof(buffer))) > 0) {
-    bytes_written = write(dest_fd, buffer, bytes_read);
-    if (bytes_written != bytes_read) {
-      perror("write");
-      exit(EXIT_FAILURE);
+    
+    // Check if the destination file already exists
+    struct stat buffer_stat;
+    if (stat(dest, &buffer_stat) == 0) {
+        printf("File '%s' already exists. Skipping copy.\n", dest);
+        return; // Exit the function if the file exists
     }
-  }
 
-  check_error(close(source_fd), "close source file");
-  check_error(close(dest_fd), "close dest file");
+    // Create the directory for the destination if it doesn't exist
+    char dest_dir[256];
+    strncpy(dest_dir, dest, sizeof(dest_dir));
+    char *last_slash = strrchr(dest_dir, '/');
+    if (last_slash != NULL) {
+        *last_slash = '\0';  // Null-terminate to isolate the directory path
+        create_directory(dest_dir);
+        *last_slash = '/';  // Restore the original path
+    }
+
+    int source_fd = open(src, O_RDONLY);
+    if (source_fd < 0) {
+        perror("open source file");
+        exit(EXIT_FAILURE);
+    }
+
+    int dest_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (dest_fd < 0) {
+        fprintf(stderr, "Error opening destination file '%s': %s\n", dest, strerror(errno));
+        close(source_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[4096];
+    ssize_t bytes_read, bytes_written;
+    while ((bytes_read = read(source_fd, buffer, sizeof(buffer))) > 0) {
+        bytes_written = write(dest_fd, buffer, bytes_read);
+        if (bytes_written != bytes_read) {
+            perror("write");
+            close(source_fd);
+            close(dest_fd);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Check for read errors
+    if (bytes_read < 0) {
+        perror("read");
+    }
+
+    // Close file descriptors
+    close(source_fd);
+    close(dest_fd);
 }
 
 const char *root_dir;
@@ -94,7 +145,7 @@ int child_func(void *arg) {
   check_error(chdir("/"), "chdir");
 
   connect_symlinks();
-  setup_network_in_child();
+  // setup_network_in_child();
 
   // Execute bash inside the sandbox
   char *const bash_args[] = {"/bin/bash", NULL};
@@ -213,7 +264,7 @@ int main(int argc, char *argv[]) {
   check_error(waitpid(child_pid, NULL, 0), "waitpid");
 
   // Cleanup network interfaces
-  cleanup_network();
+  // cleanup_network();
 
   free(stack);
   return 0;

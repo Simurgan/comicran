@@ -1,1 +1,1 @@
-[] 1. in comicran/cfg_maker, the duplicates should be checked before written to output config.
+[ ] 1. Improve jailor and solve network problem
