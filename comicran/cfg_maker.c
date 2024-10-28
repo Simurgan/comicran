@@ -42,6 +42,7 @@ void write_output_config(const char *output_file, const char *root_dir, const ch
                          Symlink *symlinks, int symlink_count);
 void free_string_array(char **array, int count);
 int compare_strings(const void *a, const void *b);
+void remove_duplicates(char **directories, int *size);
 int compare_symlinks(const void *a, const void *b);
 void fix_symlinks(Symlink *symlinks, int *symlink_count);
 
@@ -201,6 +202,7 @@ int main(int argc, char **argv) {
     }
 
     qsort(directories, dir_count, sizeof(char *), compare_strings);
+    remove_duplicates(directories, &dir_count);
     qsort(symlinks, symlink_count, sizeof(Symlink), compare_symlinks);
     fix_symlinks(symlinks, &symlink_count);
 
@@ -223,17 +225,42 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-int compare_symlinks(const void *a, const void *b) {
-    const Symlink *sym1 = (const Symlink *)a;
-    const Symlink *sym2 = (const Symlink *)b;
-    return strcmp(sym1->sym, sym2->sym);
-}
-
 /* Comparison function for qsort */
 int compare_strings(const void *a, const void *b) {
     const char * const *str1 = (const char * const *)a;
     const char * const *str2 = (const char * const *)b;
     return strcmp(*str1, *str2);
+}
+
+void remove_duplicates(char **directories, int *size) {
+    if (*size == 0) return;  // No elements to process
+
+    int write_index = 0;  // Index to write the next unique element
+
+    for (int read_index = 1; read_index < *size; read_index++) {
+        if (strcmp(directories[write_index], directories[read_index]) != 0) {
+            // Found a new unique element
+            write_index++;
+            directories[write_index] = directories[read_index];
+        } else {
+            // Duplicate found; free the duplicate string if dynamically allocated
+            free(directories[read_index]);
+        }
+    }
+
+    // Optionally set remaining pointers to NULL
+    for (int i = write_index + 1; i < *size; i++) {
+        directories[i] = NULL;
+    }
+
+    // Update the size to reflect the new number of unique directories
+    *size = write_index + 1;
+}
+
+int compare_symlinks(const void *a, const void *b) {
+    const Symlink *sym1 = (const Symlink *)a;
+    const Symlink *sym2 = (const Symlink *)b;
+    return strcmp(sym1->sym, sym2->sym);
 }
 
 /**
