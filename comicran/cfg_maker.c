@@ -11,6 +11,7 @@
 #define MAX_EXECUTABLES 256
 #define MAX_FILE_COPIES 512
 #define MAX_SYMLINKS 512
+#define PATH_MAX 4096
 
 // Structure to hold file copy information
 typedef struct {
@@ -42,9 +43,12 @@ void write_output_config(const char *output_file, const char *root_dir, const ch
                          Symlink *symlinks, int symlink_count);
 void free_string_array(char **array, int count);
 int compare_strings(const void *a, const void *b);
-void remove_duplicates(char **directories, int *size);
+void remove_duplicate_directories(char **directories, int *size);
 int compare_symlinks(const void *a, const void *b);
+void remove_duplicate_symlinks(Symlink *symlinks, int *size);
 void fix_symlinks(Symlink *symlinks, int *symlink_count);
+int compare_file_copies(const void *a, const void *b);
+void remove_duplicate_filecopies(FileCopy *file_copies, int *size);
 
 int main(int argc, char **argv) {
     if (argc != 3) {
@@ -177,15 +181,18 @@ int main(int argc, char **argv) {
         // Get dependencies using ldd and add them to file_copies array
         get_executable_dependencies(executables[i], file_copies, &file_copy_count, MAX_FILE_COPIES,
                                     directories, &dir_count, MAX_DIRECTORIES);
+
     }
 
     // [8] Resolve real paths in directories array and update symlinks array
     resolve_paths_in_array(directories, dir_count, symlinks, &symlink_count, MAX_SYMLINKS,
                            directories, &dir_count, MAX_DIRECTORIES);
 
+
     // [9] Resolve real paths in file_copies array and update symlinks array
     resolve_paths_in_file_copies(file_copies, file_copy_count, symlinks, &symlink_count, MAX_SYMLINKS,
                                  directories, &dir_count, MAX_DIRECTORIES);
+
 
     // [10] Read symlinks list from input config file and add to symlinks array
     config_setting_t *symlinks_setting = config_lookup(&cfg, "symlinks");
@@ -202,9 +209,17 @@ int main(int argc, char **argv) {
     }
 
     qsort(directories, dir_count, sizeof(char *), compare_strings);
-    remove_duplicates(directories, &dir_count);
+
+    remove_duplicate_directories(directories, &dir_count);
     qsort(symlinks, symlink_count, sizeof(Symlink), compare_symlinks);
+
+    remove_duplicate_symlinks(symlinks, &symlink_count);
+
     fix_symlinks(symlinks, &symlink_count);
+    qsort(file_copies, file_copy_count, sizeof(FileCopy), compare_file_copies);
+
+    remove_duplicate_filecopies(file_copies, &file_copy_count);
+
 
     // [11-15] Write the output configuration file
     write_output_config(output_config_file, root_dir, root_process, directories, dir_count,
@@ -232,7 +247,7 @@ int compare_strings(const void *a, const void *b) {
     return strcmp(*str1, *str2);
 }
 
-void remove_duplicates(char **directories, int *size) {
+void remove_duplicate_directories(char **directories, int *size) {
     if (*size == 0) return;  // No elements to process
 
     int write_index = 0;  // Index to write the next unique element
@@ -263,6 +278,26 @@ int compare_symlinks(const void *a, const void *b) {
     return strcmp(sym1->sym, sym2->sym);
 }
 
+void remove_duplicate_symlinks(Symlink *symlinks, int *size) {
+    if (*size == 0) return;
+
+    int write_index = 0;
+
+    for (int read_index = 1; read_index < *size; read_index++) {
+        if (strcmp(symlinks[write_index].sym, symlinks[read_index].sym) != 0) {
+            // Found a new unique FileCopy
+            write_index++;
+            if (write_index != read_index) {
+                symlinks[write_index] = symlinks[read_index];
+            }
+        }
+        // Else, duplicate found; do nothing
+    }
+
+    // Update the size to reflect the number of unique FileCopies
+    *size = write_index + 1;
+}
+
 /**
  * Resolves symlink paths within the symlinks array and removes redundant symlinks.
  * For each symlink, if its 'sym' appears in the paths of subsequent symlinks,
@@ -272,25 +307,28 @@ void fix_symlinks(Symlink *symlinks, int *symlink_count) {
     // First, iterate over symlinks and adjust paths
     for (int i = 0; i < *symlink_count; i++) {
         Symlink *current = &symlinks[i];
-        size_t sym_len = strlen(current->sym);
+        char current_sym_with_slash[PATH_MAX + 1];
+        snprintf(current_sym_with_slash, PATH_MAX + 1, "%s/", current->sym);
+        char current_dst_with_slash[PATH_MAX + 1];
+        snprintf(current_dst_with_slash, PATH_MAX + 1, "%s/", current->dst);
+        size_t sym_len = strlen(current_sym_with_slash);
 
         for (int j = i + 1; j < *symlink_count; j++) {
             Symlink *other = &symlinks[j];
-
             // Check if current sym is a prefix of other sym
-            if (strncmp(other->sym, current->sym, sym_len) == 0) {
+            if (strncmp(other->sym, current_sym_with_slash, sym_len) == 0) {
                 // Replace the prefix with current dst
-                char new_sym[PATH_MAX];
-                snprintf(new_sym, PATH_MAX, "%s%s", current->dst, other->sym + sym_len);
+                char new_sym[PATH_MAX + 1];
+                snprintf(new_sym, PATH_MAX + 1, "%s%s", current_dst_with_slash, other->sym + sym_len);
                 strncpy(other->sym, new_sym, PATH_MAX - 1);
                 other->sym[PATH_MAX - 1] = '\0';
             }
 
             // Check if current sym is a prefix of other dst
-            if (strncmp(other->dst, current->sym, sym_len) == 0) {
+            if (strncmp(other->dst, current_sym_with_slash, sym_len) == 0) {
                 // Replace the prefix with current dst
-                char new_dst[PATH_MAX];
-                snprintf(new_dst, PATH_MAX, "%s%s", current->dst, other->dst + sym_len);
+                char new_dst[PATH_MAX + 1];
+                snprintf(new_dst, PATH_MAX + 1, "%s%s", current_dst_with_slash, other->dst + sym_len);
                 strncpy(other->dst, new_dst, PATH_MAX - 1);
                 other->dst[PATH_MAX - 1] = '\0';
             }
@@ -309,6 +347,32 @@ void fix_symlinks(Symlink *symlinks, int *symlink_count) {
         }
     }
     *symlink_count = write_index;
+}
+
+int compare_file_copies(const void *a, const void *b) {
+    const FileCopy *fc1 = (const FileCopy *)a;
+    const FileCopy *fc2 = (const FileCopy *)b;
+    return strcmp(fc1->dst, fc2->dst);
+}
+
+void remove_duplicate_filecopies(FileCopy *file_copies, int *size) {
+    if (*size == 0) return;
+
+    int write_index = 0;
+
+    for (int read_index = 1; read_index < *size; read_index++) {
+        if (strcmp(file_copies[write_index].dst, file_copies[read_index].dst) != 0) {
+            // Found a new unique FileCopy
+            write_index++;
+            if (write_index != read_index) {
+                file_copies[write_index] = file_copies[read_index];
+            }
+        }
+        // Else, duplicate found; do nothing
+    }
+
+    // Update the size to reflect the number of unique FileCopies
+    *size = write_index + 1;
 }
 
 /**
@@ -445,11 +509,13 @@ void resolve_paths_in_array(char **array, int count, Symlink *symlinks, int *sym
                 strcpy(array[i], resolved_path);
 
                 // [8.I.d] Update any other paths that start with the old path
+                char old_path_with_slash[PATH_MAX + 1];
+                snprintf(old_path_with_slash, PATH_MAX + 1, "%s/", old_path);
                 for (int j = 0; j < count; j++) {
                     if (j == i) continue; // Skip the current item
-                    if (strncmp(array[j], old_path, strlen(old_path)) == 0) {
+                    if (strncmp(array[j], old_path_with_slash, strlen(old_path_with_slash)) == 0) {
                         char new_path[PATH_MAX];
-                        snprintf(new_path, PATH_MAX, "%s%s", resolved_path, array[j] + strlen(old_path));
+                        snprintf(new_path, PATH_MAX + 1, "%s/%s", resolved_path, array[j] + strlen(old_path_with_slash));
                         strcpy(array[j], new_path);
                     }
                 }
