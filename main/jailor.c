@@ -145,7 +145,7 @@ int child_func(void *arg) {
   check_error(chdir("/"), "chdir");
 
   connect_symlinks();
-  // setup_network_in_child();
+  setup_network_in_child();
 
   // Execute bash inside the sandbox
   char *const bash_args[] = {"/bin/bash", NULL};
@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
   check_error(waitpid(child_pid, NULL, 0), "waitpid");
 
   // Cleanup network interfaces
-  // cleanup_network();
+  cleanup_network();
 
   free(stack);
   return 0;
