@@ -117,7 +117,6 @@ void connect_symlinks() {
             config_setting_lookup_string(s_l, "dst", &dst)))
         continue;
 
-      printf("%s --> %s\n", sym, dst);
       check_error(symlink(dst, sym), "symlink");
     }
   }

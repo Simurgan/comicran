@@ -409,7 +409,7 @@ void add_directory_with_parents(char **directories, int *dir_count, const char *
 
     // If the path is a file, remove the filename
     struct stat st;
-    if (stat(temp_path, &st) == 0 && !S_ISDIR(st.st_mode)) {
+    if (stat(temp_path, &st) != 0 || (stat(temp_path, &st) == 0 && !S_ISDIR(st.st_mode))) {
         char *last_slash = strrchr(temp_path, '/');
         if (last_slash != NULL && last_slash != temp_path) {
             *last_slash = '\0';
