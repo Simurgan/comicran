@@ -1,1 +1,2 @@
-[ ] 1. Improve jailor and solve network problem
+[ ] 1. Solve race condition problem (maybe by listening on host ip etc. before running root_process)
+[ ] 2. Ensure server works properly in the jail and can communicate with host

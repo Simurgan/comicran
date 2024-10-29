@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <libconfig.h>
-#include <net/if.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,21 +126,6 @@ void connect_symlinks(SandboxContext *ctx) {
     }
 }
 
-// Function to configure networking inside the child namespace
-void setup_network_in_child() {
-    int ret;
-
-    // Bring up the veth1 interface and set IP address
-    ret = system("ip addr add 192.168.1.2/24 dev veth1");
-    check_error(ret, "ip addr add in child");
-    ret = system("ip link set veth1 up");
-    check_error(ret, "ip link set veth1 up in child");
-    ret = system("ip route add default via 192.168.1.1");
-    check_error(ret, "ip route add in child");
-
-    printf("Network in child namespace set up: veth1 with IP 192.168.1.2\n");
-}
-
 // Function that runs in the child process
 int child_func(void *arg) {
     SandboxContext *ctx = (SandboxContext *)arg;
@@ -151,42 +135,12 @@ int child_func(void *arg) {
     check_error(chdir("/"), "chdir");
 
     connect_symlinks(ctx);
-    setup_network_in_child();
 
     // Execute bash inside the sandbox
     char *const bash_args[] = {"/bin/bash", NULL};
     check_error(execv("/bin/bash", bash_args), "execv /bin/bash");
 
     return 0;
-}
-
-// Function to set up veth pair on the host and move one end to child namespace
-void setup_network_in_host(pid_t child_pid) {
-    int ret;
-
-    // Create a veth pair: veth0 on the host, veth1 to be moved to the child
-    ret = system("ip link add veth0 type veth peer name veth1");
-    check_error(ret, "ip link add veth pair");
-
-    // Move veth1 to the child's network namespace
-    char cmd[255];
-    snprintf(cmd, sizeof(cmd), "ip link set veth1 netns %d", child_pid);
-    ret = system(cmd);
-    check_error(ret, "ip link set veth1 to child");
-
-    // Set IP address and bring up veth0 on the host
-    ret = system("ip addr add 192.168.1.1/24 dev veth0");
-    check_error(ret, "ip addr add on host");
-    ret = system("ip link set veth0 up");
-    check_error(ret, "ip link set veth0 up");
-
-    printf("Network in host namespace set up: veth0 with IP 192.168.1.1\n");
-}
-
-// Function to clean up network interfaces
-void cleanup_network() {
-    system("ip link delete veth0");
-    printf("Network cleaned up: veth0 and veth1 deleted\n");
 }
 
 // Function to initialize configuration
@@ -274,6 +228,12 @@ int main(int argc, char *argv[]) {
     // Copy files as per configuration
     copy_files(&ctx);
 
+    check_error(system("echo 1 > /proc/sys/net/ipv4/ip_forward"), "echo 1 > /proc/sys/net/ipv4/ip_forward");
+
+    check_error(system("ip link add veth0 type veth peer name veth1"), "ip link add veth0 type veth peer name veth1");
+    check_error(system("ip addr add 10.0.0.1/24 dev veth0"), "ip addr add 10.0.0.1/24 dev veth0");
+    check_error(system("ip link set veth0 up"), "ip link set veth0 up");
+
     // Allocate stack for child process
     char *stack = malloc(STACK_SIZE);
     check_error(stack == NULL ? -1 : 0, "malloc stack");
@@ -285,14 +245,21 @@ int main(int argc, char *argv[]) {
                           &ctx);
     check_error(child_pid, "clone");
 
-    // Set up the network on the host for the child process
-    setup_network_in_host(child_pid);
+    char cmd[255];
+    snprintf(cmd, sizeof(cmd), "ip link set veth1 netns %d", child_pid);
+    check_error(system(cmd), cmd);
+
+    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip addr add 10.0.0.2/24 dev veth1", child_pid);
+    check_error(system(cmd), cmd);
+
+    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip link set veth1 up", child_pid);
+    check_error(system(cmd), cmd);
+
+    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip route add default via 10.0.0.1", child_pid);
+    check_error(system(cmd), cmd);
 
     // Wait for the child process to finish
     check_error(waitpid(child_pid, NULL, 0), "waitpid");
-
-    // Cleanup network interfaces
-    cleanup_network();
 
     // Free resources
     free(stack);
