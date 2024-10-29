@@ -5,9 +5,9 @@
 #include <unistd.h>
 
 int main(int argc, char const *argv[]) {
-  const char *server_ip = argv[1]; // Server IP as argument
-  const int PORT = atoi(argv[2]);
-  const int BUFFER_SIZE = atoi(argv[3]);
+  const char *server_ip = "10.0.0.2"; // Server IP as argument
+  const int PORT = 5005;
+  const int BUFFER_SIZE = 1024;
   int sockfd;
   struct sockaddr_in server_addr;
   char buffer[BUFFER_SIZE];
