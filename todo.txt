@@ -1,11 +1,12 @@
-[ ] 1. (server) Make servers have their port numbers from command line arguments
-[ ] 2. (jailor) Take ip and port specs as command line arguments
-[ ] 3. (jailor) Remove sandbox directory after main process exits
-[ ] 4. (jailor) Make jailor run root_process instead of bash as main process
-        - check if that child server process running before network configs of parent process (race condition) causes server not to listen the port
-[ ] 5. (new sandbox_deamon working in VMs) Run and terminate sandboxed servers and arrange port forwardings programmatically
-[ ] 6. (new sdn) Take client requests and forward packages accordingly to VMs and sandboxes on the host
-[ ] 7. (new sysmanager) Run, terminate, configure sandboxed servers that are in the VMs from host
-[ ] 8. find a way to monitor incoming UDP requests and their replies in VMs
+[x] 1. (server) Make servers have their port numbers from command line arguments
+[x] 2. (cfg_maker) Make cfg_maker read host and sandbox ips, root_process command line arguments, and sandbox_id from input config file and write them to output config file.
+[x] 3. (jailor) Take host and sandbox ip specs, root_process command line arguments, sandbox_id from config file
+[ ] 4. (jailor) Remove sandbox directory after main process exits
+[x] 5. (jailor) Make jailor run root_process instead of bash as main process
+        - check if that child server process running before network configs of parent process (race condition) causes server not to listen the port or any other bug
+[ ] 6. (new sandbox_deamon working in VMs) Run and terminate sandboxed servers and arrange port forwardings programmatically
+[ ] 7. (new sdn) Take client requests and forward packages accordingly to VMs and sandboxes on the host
+[ ] 8. (new sysmanager) Run, terminate, configure sandboxed servers that are in the VMs from host
+[ ] 9. find a way to monitor incoming UDP requests and their replies in VMs
 
-[ ] 9. (optional) (cfg_maker) Make executables have destination paths like file copies
+[ ] 10. (optional) (cfg_maker) Make executables have destination paths like file copies

@@ -6,7 +6,7 @@
 
 int main(int argc, char const *argv[])
 {
-    const int PORT = 5005;
+    const int PORT = atoi(argv[1]);
     const int BUFFER_SIZE = 1024;
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
