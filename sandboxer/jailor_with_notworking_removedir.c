@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <dirent.h>  // Include this header for directory operations
 
 #define STACK_SIZE (1024 * 1024) // Stack size for the child process
 
@@ -19,6 +20,15 @@ typedef struct {
     const char *root_dir;
     config_t cfg;
     config_setting_t *symlink_setting;
+    int sandbox_id;
+    char *root_process;
+    char **root_process_args;
+    int root_process_argc;
+    struct {
+        const char *host;
+        const char *sandbox;
+    } veth_ip_pair;
+    int veth_ip_pair_defined;
 } SandboxContext;
 
 // Utility function for error checking
@@ -136,9 +146,21 @@ int child_func(void *arg) {
 
     connect_symlinks(ctx);
 
-    // Execute bash inside the sandbox
-    char *const bash_args[] = {"/bin/bash", NULL};
-    check_error(execv("/bin/bash", bash_args), "execv /bin/bash");
+    // Prepare arguments for execv
+    int argc = ctx->root_process_argc + 2; // +1 for the process name, +1 for NULL terminator
+    char **args = malloc(sizeof(char*) * argc);
+    if (!args) {
+        perror("malloc args");
+        exit(EXIT_FAILURE);
+    }
+    args[0] = ctx->root_process;
+    for (int i = 0; i < ctx->root_process_argc; ++i) {
+        args[i + 1] = ctx->root_process_args[i];
+    }
+    args[argc - 1] = NULL;
+
+    // Execute root_process inside the sandbox
+    check_error(execv(ctx->root_process, args), "execv root_process");
 
     return 0;
 }
@@ -161,6 +183,58 @@ void init_config(const char *config_file_path, SandboxContext *ctx) {
     }
 
     ctx->symlink_setting = config_lookup(&(ctx->cfg), "symlinks");
+
+    // Read sandbox_id (mandatory)
+    if (!config_lookup_int(&(ctx->cfg), "sandbox_id", &(ctx->sandbox_id))) {
+        fprintf(stderr, "No 'sandbox_id' setting in configuration file.\n");
+        config_destroy(&(ctx->cfg));
+        exit(EXIT_FAILURE);
+    }
+
+    // Read root_process (mandatory)
+    if (!config_lookup_string(&(ctx->cfg), "root_process", &(ctx->root_process))) {
+        fprintf(stderr, "No 'root_process' setting in configuration file.\n");
+        config_destroy(&(ctx->cfg));
+        exit(EXIT_FAILURE);
+    }
+
+    // Read root_process_args (optional)
+    config_setting_t *args_setting = config_lookup(&(ctx->cfg), "root_process_args");
+    if (args_setting != NULL) {
+        ctx->root_process_argc = config_setting_length(args_setting);
+        ctx->root_process_args = malloc(sizeof(char*) * ctx->root_process_argc);
+        if (!ctx->root_process_args) {
+            perror("malloc root_process_args");
+            config_destroy(&(ctx->cfg));
+            exit(EXIT_FAILURE);
+        }
+        for (int i = 0; i < ctx->root_process_argc; ++i) {
+            const char *arg = config_setting_get_string_elem(args_setting, i);
+            ctx->root_process_args[i] = strdup(arg);
+            if (!ctx->root_process_args[i]) {
+                perror("strdup root_process_arg");
+                config_destroy(&(ctx->cfg));
+                exit(EXIT_FAILURE);
+            }
+        }
+    } else {
+        ctx->root_process_argc = 0;
+        ctx->root_process_args = NULL;
+    }
+
+    // Read veth_ip_pair (optional)
+    config_setting_t *veth_setting = config_lookup(&(ctx->cfg), "veth_ip_pair");
+    if (veth_setting != NULL) {
+        if (!(config_setting_lookup_string(veth_setting, "host", &(ctx->veth_ip_pair.host)) &&
+              config_setting_lookup_string(veth_setting, "sandbox", &(ctx->veth_ip_pair.sandbox)))) {
+            fprintf(stderr, "veth_ip_pair must contain 'host' and 'sandbox'.\n");
+            config_destroy(&(ctx->cfg));
+            exit(EXIT_FAILURE);
+        }
+        ctx->veth_ip_pair_defined = 1;
+    } else {
+        ctx->veth_ip_pair_defined = 0;
+    }
 }
 
 // Function to create directories from configuration
@@ -205,6 +279,57 @@ void copy_files(SandboxContext *ctx) {
     }
 }
 
+// Function to remove a directory recursively
+void remove_directory(const char *path) {
+    DIR *d = opendir(path);
+    size_t path_len = strlen(path);
+    int r = -1;
+
+    if (d) {
+        struct dirent *p;
+        r = 0;
+        while (!r && (p = readdir(d))) {
+            int r2 = -1;
+            char *buf;
+            size_t len;
+
+            // Skip the names "." and ".." as we don't want to recurse on them.
+            if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+                continue;
+
+            len = path_len + strlen(p->d_name) + 2;  // +2 for '/' and '\0'
+            buf = malloc(len);
+
+            if (buf) {
+                struct stat statbuf;
+                snprintf(buf, len, "%s/%s", path, p->d_name);
+                if (!lstat(buf, &statbuf)) {
+                    if (S_ISDIR(statbuf.st_mode)) {
+                        // Recursively delete the subdirectory
+                        remove_directory(buf);
+                    } else {
+                        // Remove the file or symbolic link
+                        r2 = unlink(buf);
+                        if (r2 != 0) {
+                            perror("unlink");
+                        }
+                    }
+                }
+                free(buf);
+            }
+            r = r2;
+        }
+        closedir(d);
+    }
+
+    if (!r) {
+        r = rmdir(path);
+        if (r != 0) {
+            perror("rmdir");
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <config_file>\n", argv[0]);
@@ -215,10 +340,6 @@ int main(int argc, char *argv[]) {
 
     // Initialize configuration
     init_config(argv[1], &ctx);
-    const int SANDBOX_ID = atoi(argv[2]);
-    char *host_ip = argv[3];
-    char *sandbox_ip = argv[4];
-    const int PORT = atoi(argv[5]);
 
     // Check if the sandbox directory exists, if not create it
     struct stat st;
@@ -232,21 +353,24 @@ int main(int argc, char *argv[]) {
     // Copy files as per configuration
     copy_files(&ctx);
 
-    // if veth_ip_pair is defined
-    // Enable IP forwarding
-    check_error(system("echo 1 > /proc/sys/net/ipv4/ip_forward"), "echo 1 > /proc/sys/net/ipv4/ip_forward");
-
-    // Create veth pair
-    const int host_veth = 100 + SANDBOX_ID;
-    const int sandbox_veth = 200 + SANDBOX_ID;
+    // Network configuration if veth_ip_pair is defined
+    const int host_veth = 100 + ctx.sandbox_id;
+    const int sandbox_veth = 200 + ctx.sandbox_id;
     char cmd[255];
-    snprintf(cmd, sizeof(cmd), "ip link add veth%d type veth peer name veth%d", host_veth, sandbox_veth);
-    check_error(system(cmd), cmd);
-    snprintf(cmd, sizeof(cmd), "ip addr add %s/24 dev veth%d", host_ip, host_veth);
-    check_error(system(cmd), cmd);
-    snprintf(cmd, sizeof(cmd), "ip link set veth%d up", host_veth);
-    check_error(system(cmd), cmd);
-    // end if
+    if (ctx.veth_ip_pair_defined) {
+        // Enable IP forwarding
+        check_error(system("echo 1 > /proc/sys/net/ipv4/ip_forward"), "echo 1 > /proc/sys/net/ipv4/ip_forward");
+
+        // Create veth pair
+        snprintf(cmd, sizeof(cmd), "ip link add veth%d type veth peer name veth%d", host_veth, sandbox_veth);
+        check_error(system(cmd), cmd);
+
+        snprintf(cmd, sizeof(cmd), "ip addr add %s/24 dev veth%d", ctx.veth_ip_pair.host, host_veth);
+        check_error(system(cmd), cmd);
+
+        snprintf(cmd, sizeof(cmd), "ip link set veth%d up", host_veth);
+        check_error(system(cmd), cmd);
+    }
 
     // Allocate stack for child process
     char *stack = malloc(STACK_SIZE);
@@ -259,25 +383,39 @@ int main(int argc, char *argv[]) {
                           &ctx);
     check_error(child_pid, "clone");
 
-    // if veth_ip_pair is defined
-    snprintf(cmd, sizeof(cmd), "ip link set veth%d netns %d", sandbox_veth, child_pid);
-    check_error(system(cmd), cmd);
+    // Network configuration if veth_ip_pair is defined
+    if (ctx.veth_ip_pair_defined) {
+        snprintf(cmd, sizeof(cmd), "ip link set veth%d netns %d", sandbox_veth, child_pid);
+        check_error(system(cmd), cmd);
 
-    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip addr add %s/24 dev veth%d", child_pid, sandbox_ip, sandbox_veth);
-    check_error(system(cmd), cmd);
+        snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip addr add %s/24 dev veth%d", child_pid, ctx.veth_ip_pair.sandbox, sandbox_veth);
+        check_error(system(cmd), cmd);
 
-    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip link set veth%d up", child_pid, sandbox_veth);
-    check_error(system(cmd), cmd);
+        snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip link set veth%d up", child_pid, sandbox_veth);
+        check_error(system(cmd), cmd);
 
-    snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip route add default via %s", child_pid, host_ip);
-    check_error(system(cmd), cmd);
-    // end if
+        snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip route add default via %s", child_pid, ctx.veth_ip_pair.host);
+        check_error(system(cmd), cmd);
+    }
 
     // Wait for the child process to finish
     check_error(waitpid(child_pid, NULL, 0), "waitpid");
 
+    printf("Child process finished.\n");
+
+    // Remove root_dir directory from host system recursively and forcefully with all its content
+    remove_directory(ctx.root_dir);
+
+    printf("Directory removed.\n");
+
     // Free resources
     free(stack);
+    if (ctx.root_process_args) {
+        for (int i = 0; i < ctx.root_process_argc; ++i) {
+            free(ctx.root_process_args[i]);
+        }
+        free(ctx.root_process_args);
+    }
     config_destroy(&(ctx.cfg));
 
     return 0;
