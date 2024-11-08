@@ -350,6 +350,9 @@ int main(int argc, char *argv[]) {
     // Wait for the child process to finish
     check_error(waitpid(child_pid, NULL, 0), "waitpid");
 
+    snprintf(cmd, sizeof(cmd), "rm -rf %s", ctx.root_dir);
+    check_error(system(cmd), cmd);
+
     // Free resources
     free(stack);
     if (ctx.root_process_args) {

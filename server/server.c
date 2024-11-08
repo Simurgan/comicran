@@ -41,10 +41,15 @@ int main(int argc, char const *argv[])
         // Receive data from client
         int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&client_addr, &client_len);
         buffer[n] = '\0';
-        printf("Received number: %s\n", buffer);
 
         // Convert received data to integer and compute square
         int number = atoi(buffer);
+        if (number < 0)
+        {
+            printf("Server shutting down...\n");
+            break;
+        }
+        
         int result = number * number;
 
         // Prepare the result to send back
@@ -52,7 +57,6 @@ int main(int argc, char const *argv[])
 
         // Send the square of the number back to the client
         sendto(sockfd, buffer, strlen(buffer), 0, (const struct sockaddr *)&client_addr, client_len);
-        printf("Sent result: %s\n", buffer);
     }
 
     close(sockfd);
