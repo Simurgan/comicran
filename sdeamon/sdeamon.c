@@ -11,9 +11,12 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <libconfig.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
 
 #define PORT 5005
 #define BACKLOG 10  // Number of allowed pending connections
+#define INTERFACE_NAME "ens33"
 
 // Data structure to store program information
 struct ProgramData {
@@ -33,6 +36,8 @@ struct ProgramData *find_program(const char *program_id);
 void remove_program(const char *program_id);
 void sigchld_handler(int s);
 int parse_config_file(const char *config_path, struct ProgramData *program);
+void check_error(int ret, const char *msg);
+char* get_ip_address(const char *interface);
 
 int main() {
     int sockfd, new_fd;
@@ -42,6 +47,8 @@ int main() {
     int yes = 1;
     char buf[1024];
     int numbytes;
+
+    char *vm_ip = get_ip_address(INTERFACE_NAME);
 
     // Create socket
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -169,6 +176,13 @@ int main() {
                     exit(1);
                 } else {
                     // Parent process
+                    char cmd[1024];
+                    snprintf(cmd, sizeof(cmd), "sudo iptables -t nat -A PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
+                    check_error(system(cmd), cmd);
+
+                    snprintf(cmd, sizeof(cmd), "sudo iptables -A FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
+                    check_error(system(cmd), cmd);
+
                     program->child_pid = pid2;
                     add_program(program);
 
@@ -216,6 +230,13 @@ int main() {
 
             // Wait for the child process to finish
             waitpid(program->child_pid, NULL, 0);
+
+            char cmd[1024];
+            snprintf(cmd, sizeof(cmd), "sudo iptables -t nat -D PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
+            check_error(system(cmd), cmd);
+
+            snprintf(cmd, sizeof(cmd), "sudo iptables -D FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
+            check_error(system(cmd), cmd);
 
             // Respond to request
             char response[512];
@@ -281,7 +302,7 @@ int parse_config_file(const char *config_path, struct ProgramData *program) {
 
     // Initialize the configuration
     config_init(&cfg);
-    
+
     // Read the file
     if (!config_read_file(&cfg, config_path)) {
         fprintf(stderr, "Error reading config file %s:%d - %s\n",
@@ -326,4 +347,44 @@ int parse_config_file(const char *config_path, struct ProgramData *program) {
     // Clean up
     config_destroy(&cfg);
     return result;
+}
+
+// Utility function for error checking
+void check_error(int ret, const char *msg) {
+    if (ret == -1) {
+        perror(msg);
+        exit(EXIT_FAILURE);
+    }
+}
+
+char* get_ip_address(const char *interface) {
+    int fd;
+    struct ifreq ifr;
+    char *ip_address = (char *)malloc(INET_ADDRSTRLEN);
+
+    // Create a socket to perform the ioctl call
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        perror("socket");
+        free(ip_address);
+        return NULL;
+    }
+
+    // Set the interface name in the ifreq structure
+    strncpy(ifr.ifr_name, interface, IFNAMSIZ-1);
+
+    // Perform the ioctl call to get the IP address
+    if (ioctl(fd, SIOCGIFADDR, &ifr) < 0) {
+        perror("ioctl");
+        close(fd);
+        free(ip_address);
+        return NULL;
+    }
+
+    // Extract the IP address
+    struct sockaddr_in *ip_addr = (struct sockaddr_in *)&ifr.ifr_addr;
+    strncpy(ip_address, inet_ntoa(ip_addr->sin_addr), INET_ADDRSTRLEN);
+
+    close(fd);
+    return ip_address;
 }

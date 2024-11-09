@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 int main(int argc, char const *argv[]) {
-  const char *server_ip = "10.0.0.2"; // Server IP as argument
+  const char *server_ip = "192.168.1.249"; // Server IP as argument
   const int PORT = 5006;
   const int BUFFER_SIZE = 1024;
   int sockfd;
