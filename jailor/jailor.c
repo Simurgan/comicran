@@ -191,7 +191,7 @@ void init_config(const char *config_file_path, SandboxContext *ctx) {
     }
 
     // Read root_process (default to "/bin/bash" if not specified)
-    if (!config_lookup_string(&(ctx->cfg), "root_process", &(ctx->root_process))) {
+    if (!config_lookup_string(&(ctx->cfg), "root_process", (const char **)&(ctx->root_process))) {
         fprintf(stderr, "No 'root_process' setting in configuration file.\n");
         config_destroy(&(ctx->cfg));
         exit(EXIT_FAILURE);

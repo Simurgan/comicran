@@ -6,5 +6,6 @@
 [ ] 6. find a way to monitor incoming UDP requests and their replies in VMs
 
 [ ] 7. (optional) (cfg_maker) Make executables have destination paths like file copies
-[ ] 8. (optional) (server + jailor) Solve the bug when server terminated, the sandbox doesn't finish good. It terminates directly.
+[ ] 8. (optional) (server + jailor) Solve the bug when server terminated with ^C or kill command, the sandbox doesn't finish good.
+        It terminates directly.
         Catch the termination signal in the server, of itself, and in the jailor and finish properly.
