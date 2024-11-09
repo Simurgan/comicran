@@ -281,7 +281,7 @@ int parse_config_file(const char *config_path, struct ProgramData *program) {
 
     // Initialize the configuration
     config_init(&cfg);
-
+    
     // Read the file
     if (!config_read_file(&cfg, config_path)) {
         fprintf(stderr, "Error reading config file %s:%d - %s\n",
@@ -295,14 +295,12 @@ int parse_config_file(const char *config_path, struct ProgramData *program) {
     // Extract root_process_args
     setting = config_lookup(&cfg, "root_process_args");
     if (setting != NULL) {
-        if (config_setting_is_array(setting)) {
-            int length = config_setting_length(setting);
-            if (length > 0) {
-                // Assuming root_process_args is an array of strings
-                if (config_setting_get_string_elem(setting, 0, &str)) {
-                    strcpy(program->root_process_arg, str);
-                }
-            }
+        const char *arg = config_setting_get_string_elem(setting, 0);
+        if (arg != NULL) {
+            strcpy(program->root_process_arg, arg);
+        } else {
+            fprintf(stderr, "Error: root_process_args[0] is NULL or not a string.\n");
+            result = -1;
         }
     } else {
         fprintf(stderr, "No 'root_process_args' setting in configuration file.\n");
@@ -310,24 +308,16 @@ int parse_config_file(const char *config_path, struct ProgramData *program) {
     }
 
     // Extract veth_ip_pair.host
-    setting = config_lookup(&cfg, "veth_ip_pair.host");
-    if (setting != NULL) {
-        if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-            str = config_setting_get_string(setting);
-            strcpy(program->veth_host_ip, str);
-        }
+    if (config_lookup_string(&cfg, "veth_ip_pair.host", &str)) {
+        strcpy(program->veth_host_ip, str);
     } else {
         fprintf(stderr, "No 'veth_ip_pair.host' setting in configuration file.\n");
         result = -1;
     }
 
     // Extract veth_ip_pair.sandbox
-    setting = config_lookup(&cfg, "veth_ip_pair.sandbox");
-    if (setting != NULL) {
-        if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-            str = config_setting_get_string(setting);
-            strcpy(program->veth_sandbox_ip, str);
-        }
+    if (config_lookup_string(&cfg, "veth_ip_pair.sandbox", &str)) {
+        strcpy(program->veth_sandbox_ip, str);
     } else {
         fprintf(stderr, "No 'veth_ip_pair.sandbox' setting in configuration file.\n");
         result = -1;
