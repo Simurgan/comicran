@@ -25,9 +25,7 @@ typedef struct {
     char dst[PATH_MAX];
 } Symlink;
 
-/**
- * Function prototypes
- */
+// Function prototypes
 int add_unique_string(char **array, int *count, const char *new_string, int max_count);
 void add_directory_with_parents(char **directories, int *dir_count, const char *path, int max_count);
 int add_unique_file_copy(FileCopy *file_copies, int *count, const char *src, const char *dst, int max_count);
@@ -38,9 +36,10 @@ void resolve_paths_in_file_copies(FileCopy *file_copies, int file_copy_count, Sy
                                   int max_symlinks, char **directories, int *dir_count, int max_directories);
 void get_executable_dependencies(const char *executable, FileCopy *file_copies, int *file_copy_count,
                                  int max_file_copies, char **directories, int *dir_count, int max_directories);
-void write_output_config(const char *output_file, const char *root_dir, const char *root_process,
+void write_output_config(const char *output_file, int sandbox_id, const char *root_dir, const char *root_process,
                          char **directories, int dir_count, FileCopy *file_copies, int file_copy_count,
-                         Symlink *symlinks, int symlink_count);
+                         Symlink *symlinks, int symlink_count, const config_setting_t *root_process_args,
+                         const config_setting_t *veth_ip_pair);
 void free_string_array(char **array, int count);
 int compare_strings(const void *a, const void *b);
 void remove_duplicate_directories(char **directories, int *size);
@@ -71,7 +70,15 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    // [1] Read root_dir from input config file
+    // Mandatory sandbox_id
+    int sandbox_id;
+    if (!config_lookup_int(&cfg, "sandbox_id", &sandbox_id)) {
+        fprintf(stderr, "Error: 'sandbox_id' must be defined in the configuration file.\n");
+        config_destroy(&cfg);
+        return EXIT_FAILURE;
+    }
+
+    // Mandatory root_dir
     const char *root_dir;
     if (!config_lookup_string(&cfg, "root_dir", &root_dir)) {
         fprintf(stderr, "Error: 'root_dir' must be defined in the configuration file.\n");
@@ -79,12 +86,25 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    // [2] Read root_process from input config file
+    // Mandatory root_process
     const char *root_process;
     if (!config_lookup_string(&cfg, "root_process", &root_process)) {
         fprintf(stderr, "Error: 'root_process' must be defined in the configuration file.\n");
         config_destroy(&cfg);
         return EXIT_FAILURE;
+    }
+
+    // Optional settings: root_process_args and veth_ip_pair
+    const config_setting_t *root_process_args = config_lookup(&cfg, "root_process_args");
+    const config_setting_t *veth_ip_pair = config_lookup(&cfg, "veth_ip_pair");
+    if (veth_ip_pair != NULL) {
+        const char *host, *sandbox;
+        if (!config_setting_lookup_string(veth_ip_pair, "host", &host) ||
+            !config_setting_lookup_string(veth_ip_pair, "sandbox", &sandbox)) {
+            fprintf(stderr, "Error: 'veth_ip_pair' requires both 'host' and 'sandbox' fields.\n");
+            config_destroy(&cfg);
+            return EXIT_FAILURE;
+        }
     }
 
     // Allocate memory for large arrays
@@ -124,36 +144,34 @@ int main(int argc, char **argv) {
         }
     }
 
-    // [3] Read the directories list from the input config file
+    // Read the directories list from the input config file
     config_setting_t *directories_setting = config_lookup(&cfg, "directories");
     if (directories_setting != NULL) {
         int count = config_setting_length(directories_setting);
         for (int i = 0; i < count; i++) {
             const char *dir = config_setting_get_string_elem(directories_setting, i);
             if (dir != NULL) {
-                // [3.I] Add parent directories considering hierarchy
                 add_directory_with_parents(directories, &dir_count, dir, MAX_DIRECTORIES);
             }
         }
     }
 
-    // [4] Read the executables list from the input config file
+    // Read the executables list from the input config file
     config_setting_t *executables_setting = config_lookup(&cfg, "executables");
     if (executables_setting != NULL) {
         int count = config_setting_length(executables_setting);
         for (int i = 0; i < count; i++) {
             const char *exe = config_setting_get_string_elem(executables_setting, i);
             if (exe != NULL) {
-                // [4.I] Add unique executables to the array
                 add_unique_string(executables, &exec_count, exe, MAX_EXECUTABLES);
             }
         }
     }
 
-    // [5] Add root_process to executables array if not already present
+    // Add root_process to executables array if not already present
     add_unique_string(executables, &exec_count, root_process, MAX_EXECUTABLES);
 
-    // [6] Read the file_copies list from the input config file
+    // Read the file_copies list from the input config file
     config_setting_t *file_copies_setting = config_lookup(&cfg, "file_copies");
     if (file_copies_setting != NULL) {
         int count = config_setting_length(file_copies_setting);
@@ -162,39 +180,29 @@ int main(int argc, char **argv) {
             const char *src, *dst;
             if (config_setting_lookup_string(file_copy_setting, "src", &src)
                 && config_setting_lookup_string(file_copy_setting, "dst", &dst)) {
-                // [6.I] Add necessary parent directories to directories array
                 add_directory_with_parents(directories, &dir_count, dst, MAX_DIRECTORIES);
-                // [6.II] Add unique file copies to the array
                 add_unique_file_copy(file_copies, &file_copy_count, src, dst, MAX_FILE_COPIES);
             }
         }
     }
 
-    // [7] Add all dependencies of each executable to file_copies array
+    // Add all dependencies of each executable to file_copies array
     for (int i = 0; i < exec_count; i++) {
-        // Add necessary parent directories for the executable itself
         add_directory_with_parents(directories, &dir_count, executables[i], MAX_DIRECTORIES);
-
-        // Add the executable to file_copies array
         add_unique_file_copy(file_copies, &file_copy_count, executables[i], executables[i], MAX_FILE_COPIES);
-
-        // Get dependencies using ldd and add them to file_copies array
         get_executable_dependencies(executables[i], file_copies, &file_copy_count, MAX_FILE_COPIES,
                                     directories, &dir_count, MAX_DIRECTORIES);
-
     }
 
-    // [8] Resolve real paths in directories array and update symlinks array
+    // Resolve real paths in directories array and update symlinks array
     resolve_paths_in_array(directories, dir_count, symlinks, &symlink_count, MAX_SYMLINKS,
                            directories, &dir_count, MAX_DIRECTORIES);
 
-
-    // [9] Resolve real paths in file_copies array and update symlinks array
+    // Resolve real paths in file_copies array and update symlinks array
     resolve_paths_in_file_copies(file_copies, file_copy_count, symlinks, &symlink_count, MAX_SYMLINKS,
                                  directories, &dir_count, MAX_DIRECTORIES);
 
-
-    // [10] Read symlinks list from input config file and add to symlinks array
+    // Read symlinks list from input config file and add to symlinks array
     config_setting_t *symlinks_setting = config_lookup(&cfg, "symlinks");
     if (symlinks_setting != NULL) {
         int count = config_setting_length(symlinks_setting);
@@ -209,21 +217,16 @@ int main(int argc, char **argv) {
     }
 
     qsort(directories, dir_count, sizeof(char *), compare_strings);
-
     remove_duplicate_directories(directories, &dir_count);
     qsort(symlinks, symlink_count, sizeof(Symlink), compare_symlinks);
-
     remove_duplicate_symlinks(symlinks, &symlink_count);
-
     fix_symlinks(symlinks, &symlink_count);
     qsort(file_copies, file_copy_count, sizeof(FileCopy), compare_file_copies);
-
     remove_duplicate_filecopies(file_copies, &file_copy_count);
 
-
-    // [11-15] Write the output configuration file
-    write_output_config(output_config_file, root_dir, root_process, directories, dir_count,
-                        file_copies, file_copy_count, symlinks, symlink_count);
+    // Write the output configuration file
+    write_output_config(output_config_file, sandbox_id, root_dir, root_process, directories, dir_count,
+                        file_copies, file_copy_count, symlinks, symlink_count, root_process_args, veth_ip_pair);
 
     // Cleanup
     config_destroy(&cfg);
@@ -239,6 +242,73 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+
+/**
+ * Write output configuration, including sandbox_id, root_process_args, and veth_ip_pair if they exist.
+ */
+void write_output_config(const char *output_file, int sandbox_id, const char *root_dir, const char *root_process,
+                         char **directories, int dir_count, FileCopy *file_copies, int file_copy_count,
+                         Symlink *symlinks, int symlink_count, const config_setting_t *root_process_args,
+                         const config_setting_t *veth_ip_pair) {
+    FILE *fp = fopen(output_file, "w");
+    if (fp == NULL) {
+        perror("Error opening output config file");
+        return;
+    }
+
+    fprintf(fp, "sandbox_id = %d\n", sandbox_id);
+    fprintf(fp, "root_dir = \"%s\"\n", root_dir);
+    fprintf(fp, "root_process = \"%s\"\n", root_process);
+
+    if (root_process_args != NULL) {
+        if (config_setting_length(root_process_args) > 0) {
+            fprintf(fp, "root_process_args = (\n");
+            for (int i = 0; i < config_setting_length(root_process_args); i++) {
+                const char *arg = config_setting_get_string_elem(root_process_args, i);
+                fprintf(fp, "    \"%s\"", arg);
+                if (i < config_setting_length(root_process_args) - 1) fprintf(fp, ",");
+                fprintf(fp, "\n");
+            }
+            fprintf(fp, ")\n");
+        }
+    }
+
+    if (veth_ip_pair != NULL) {
+        const char *host, *sandbox;
+        config_setting_lookup_string(veth_ip_pair, "host", &host);
+        config_setting_lookup_string(veth_ip_pair, "sandbox", &sandbox);
+        fprintf(fp, "veth_ip_pair = {\n    host = \"%s\",\n    sandbox = \"%s\"\n}\n", host, sandbox);
+    }
+
+    fprintf(fp, "directories = (\n");
+    for (int i = 0; i < dir_count; i++) {
+        fprintf(fp, "    \"%s\"", directories[i]);
+        if (i < dir_count - 1) fprintf(fp, ",");
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, ")\n");
+
+    fprintf(fp, "file_copies = (\n");
+    for (int i = 0; i < file_copy_count; i++) {
+        fprintf(fp, "    {\n        src = \"%s\",\n        dst = \"%s\"\n    }", file_copies[i].src, file_copies[i].dst);
+        if (i < file_copy_count - 1) fprintf(fp, ",");
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, ")\n");
+
+    fprintf(fp, "symlinks = (\n");
+    for (int i = 0; i < symlink_count; i++) {
+        fprintf(fp, "    {\n        sym = \"%s\",\n        dst = \"%s\"\n    }", symlinks[i].sym, symlinks[i].dst);
+        if (i < symlink_count - 1) fprintf(fp, ",");
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, ")\n");
+
+    fclose(fp);
+}
+
+// Other helper functions...
+// (Keep all original helper functions unchanged)
 
 /* Comparison function for qsort */
 int compare_strings(const void *a, const void *b) {
@@ -657,60 +727,6 @@ void get_executable_dependencies(const char *executable, FileCopy *file_copies, 
     }
 
     pclose(fp);
-}
-
-/**
- * Writes the output configuration file with the collected data.
- */
-void write_output_config(const char *output_file, const char *root_dir, const char *root_process,
-                         char **directories, int dir_count, FileCopy *file_copies, int file_copy_count,
-                         Symlink *symlinks, int symlink_count) {
-    FILE *fp = fopen(output_file, "w");
-    if (fp == NULL) {
-        perror("Error opening output config file");
-        return;
-    }
-
-    // [11] Write root_dir to output config file
-    fprintf(fp, "root_dir = \"%s\"\n", root_dir);
-
-    // [12] Write root_process to output config file
-    fprintf(fp, "root_process = \"%s\"\n", root_process);
-
-    // [13] Write directories array to output config file
-    fprintf(fp, "directories = (\n");
-    for (int i = 0; i < dir_count; i++) {
-        fprintf(fp, "    \"%s\"", directories[i]);
-        if (i < dir_count - 1) {
-            fprintf(fp, ",");
-        }
-        fprintf(fp, "\n");
-    }
-    fprintf(fp, ")\n");
-
-    // [14] Write file_copies array to output config file
-    fprintf(fp, "file_copies = (\n");
-    for (int i = 0; i < file_copy_count; i++) {
-        fprintf(fp, "    {\n        src = \"%s\",\n        dst = \"%s\"\n    }", file_copies[i].src, file_copies[i].dst);
-        if (i < file_copy_count - 1) {
-            fprintf(fp, ",");
-        }
-        fprintf(fp, "\n");
-    }
-    fprintf(fp, ")\n");
-
-    // [15] Write symlinks array to output config file
-    fprintf(fp, "symlinks = (\n");
-    for (int i = 0; i < symlink_count; i++) {
-        fprintf(fp, "    {\n        sym = \"%s\",\n        dst = \"%s\"\n    }", symlinks[i].sym, symlinks[i].dst);
-        if (i < symlink_count - 1) {
-            fprintf(fp, ",");
-        }
-        fprintf(fp, "\n");
-    }
-    fprintf(fp, ")\n");
-
-    fclose(fp);
 }
 
 /**

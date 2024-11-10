@@ -1,3 +1,2 @@
-[ ] 1. Solve race condition problem (maybe by listening on host ip etc. before running root_process)
-[ ] 2. Make jailor run root_process instead of bash
-[ ] 3. Add ip and port configs to the config file
+[ ] 1. setup wireshark and explore it
+[ ] 2. (optional) (cfg_maker) Make executables have destination paths like file copies
