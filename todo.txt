@@ -1,10 +1,2 @@
-[x] 1. (prob. sdeamon) fix the problem that 2 ip routing doesn't work together, only 1.
-[x] 2. (new sdn) Take client requests and forward packages accordingly to VMs and sandboxes on the host
-[x] 3. (new sysmanager) Run, terminate, configure sandboxed servers that are in the VMs from host
-[ ] 4. find a way to monitor incoming UDP requests and their replies in VMs
-[x] 5. find a proper way to terminate server process from sdeamon 
-
-[ ] 6. (optional) (cfg_maker) Make executables have destination paths like file copies
-[x] 7. (optional) (server + jailor) Solve the bug when server terminated with ^C or kill command, the sandbox doesn't finish good.
-        It terminates directly.
-        Catch the termination signal in the server, of itself, and in the jailor and finish properly.
+[ ] 1. setup wireshark and explore it
+[ ] 2. (optional) (cfg_maker) Make executables have destination paths like file copies
