@@ -1,0 +1,17 @@
+Send message (or type 'exit' to quit): set 1 192.168.1.249:5006
+Received: done
+Send message (or type 'exit' to quit): set 2 192.168.1.249:5007
+Received: done
+Send message (or type 'exit' to quit): set 3 192.168.1.173:5008
+Received: done
+Send message (or type 'exit' to quit): set 4 192.168.1.173:5009
+Received: done
+Send message (or type 'exit' to quit): 1 3
+Received: 0
+Send message (or type 'exit' to quit): 2 5
+Received: 0
+Send message (or type 'exit' to quit): 3 6
+Received: 0
+Send message (or type 'exit' to quit): 4 8
+Received: 0
+Send message (or type 'exit' to quit): 
