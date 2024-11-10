@@ -10,7 +10,7 @@
 #include <pthread.h>
 #include <ctype.h>
 
-#define PORT 5001  // Port number to listen on
+#define PORT 12345  // Port number to listen on
 #define BUFFER_SIZE 1024
 #define MAX_RULES 100
 
@@ -34,7 +34,7 @@ struct thread_args {
 void *handle_request(void *args);
 void handle_set_command(int sockfd, char *buffer, struct sockaddr_in *client_addr, socklen_t addr_len);
 void handle_unset_command(int sockfd, char *buffer, struct sockaddr_in *client_addr, socklen_t addr_len);
-void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_addr, socklen_t addr_len);
+void handle_normal_message(struct thread_args *t_args);
 
 int main() {
     int sockfd;
@@ -127,7 +127,8 @@ void *handle_request(void *args) {
         handle_unset_command(sockfd, buffer, &client_addr, addr_len);
     } else {
         // Handle normal message
-        handle_normal_message(sockfd, buffer, &client_addr, addr_len);
+        t_args->sockfd = sockfd;  // Pass the main socket for client communication
+        handle_normal_message(t_args);
     }
 
     free(args);
@@ -248,7 +249,11 @@ void handle_unset_command(int sockfd, char *buffer, struct sockaddr_in *client_a
            (struct sockaddr *)client_addr, addr_len);
 }
 
-void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_addr, socklen_t addr_len) {
+void handle_normal_message(struct thread_args *t_args) {
+    int sockfd = t_args->sockfd;  // Socket for client communication
+    struct sockaddr_in client_addr = t_args->client_addr;
+    socklen_t addr_len = t_args->addr_len;
+    char *buffer = t_args->buffer;
     char *token;
     int destination_number;
     char number_str[BUFFER_SIZE];
@@ -258,7 +263,7 @@ void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_
     if (token == NULL) {
         // Invalid format
         sendto(sockfd, "Invalid message format", strlen("Invalid message format"), 0,
-               (struct sockaddr *)client_addr, addr_len);
+               (struct sockaddr *)&client_addr, addr_len);
         return;
     }
     destination_number = atoi(token);
@@ -267,7 +272,7 @@ void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_
     if (token == NULL) {
         // Invalid format
         sendto(sockfd, "Invalid message format", strlen("Invalid message format"), 0,
-               (struct sockaddr *)client_addr, addr_len);
+               (struct sockaddr *)&client_addr, addr_len);
         return;
     }
     strcpy(number_str, token);
@@ -295,9 +300,24 @@ void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_
         char reply[BUFFER_SIZE];
         snprintf(reply, BUFFER_SIZE, "no rule found for %d", destination_number);
         sendto(sockfd, reply, strlen(reply), 0,
-               (struct sockaddr *)client_addr, addr_len);
+               (struct sockaddr *)&client_addr, addr_len);
         return;
     }
+
+    // Create a new socket for server communication
+    int server_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (server_sockfd < 0) {
+        perror("Failed to create socket for server communication");
+        sendto(sockfd, "Internal server error", strlen("Internal server error"), 0,
+               (struct sockaddr *)&client_addr, addr_len);
+        return;
+    }
+
+    // Set a timeout for the socket
+    struct timeval tv;
+    tv.tv_sec = 5;  // 5 seconds timeout
+    tv.tv_usec = 0;
+    setsockopt(server_sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
     // Send the number to the destination
     struct sockaddr_in dest_addr;
@@ -307,44 +327,37 @@ void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_
     if (inet_pton(AF_INET, found_rule.ip, &dest_addr.sin_addr) <= 0) {
         perror("Invalid destination IP address");
         sendto(sockfd, "Invalid destination IP address", strlen("Invalid destination IP address"), 0,
-               (struct sockaddr *)client_addr, addr_len);
+               (struct sockaddr *)&client_addr, addr_len);
+        close(server_sockfd);
         return;
     }
     // Send the number to the destination
-    int n = sendto(sockfd, number_str, strlen(number_str), 0,
+    int n = sendto(server_sockfd, number_str, strlen(number_str), 0,
                    (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (n < 0) {
         perror("sendto to destination failed");
         sendto(sockfd, "Failed to send to destination", strlen("Failed to send to destination"), 0,
-               (struct sockaddr *)client_addr, addr_len);
+               (struct sockaddr *)&client_addr, addr_len);
+        close(server_sockfd);
         return;
     }
     // Wait for a reply from the destination
-    // Set a timeout for the socket
-    struct timeval tv;
-    tv.tv_sec = 5;  // 5 seconds timeout
-    tv.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-
     char dest_buffer[BUFFER_SIZE];
     struct sockaddr_in from_addr;
     socklen_t from_len = sizeof(from_addr);
-    n = recvfrom(sockfd, dest_buffer, BUFFER_SIZE - 1, 0,
+    n = recvfrom(server_sockfd, dest_buffer, BUFFER_SIZE - 1, 0,
                  (struct sockaddr *)&from_addr, &from_len);
     if (n < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             // Timeout
             sendto(sockfd, "No response from destination", strlen("No response from destination"), 0,
-                   (struct sockaddr *)client_addr, addr_len);
+                   (struct sockaddr *)&client_addr, addr_len);
         } else {
             perror("recvfrom from destination failed");
             sendto(sockfd, "Failed to receive from destination", strlen("Failed to receive from destination"), 0,
-                   (struct sockaddr *)client_addr, addr_len);
+                   (struct sockaddr *)&client_addr, addr_len);
         }
-        // Reset socket timeout
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+        close(server_sockfd);
         return;
     }
     dest_buffer[n] = '\0';
@@ -355,20 +368,14 @@ void handle_normal_message(int sockfd, char *buffer, struct sockaddr_in *client_
         // Not from the intended destination
         printf("Received reply from unexpected source\n");
         sendto(sockfd, "Received reply from unexpected source", strlen("Received reply from unexpected source"), 0,
-               (struct sockaddr *)client_addr, addr_len);
-        // Reset socket timeout
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+               (struct sockaddr *)&client_addr, addr_len);
+        close(server_sockfd);
         return;
     }
 
     // Send the reply back to the client
     sendto(sockfd, dest_buffer, strlen(dest_buffer), 0,
-           (struct sockaddr *)client_addr, addr_len);
+           (struct sockaddr *)&client_addr, addr_len);
 
-    // Reset socket timeout
-    tv.tv_sec = 0;
-    tv.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    close(server_sockfd);
 }
