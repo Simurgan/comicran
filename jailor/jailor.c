@@ -313,7 +313,7 @@ int main(int argc, char *argv[]) {
         snprintf(cmd, sizeof(cmd), "ip link add veth%d type veth peer name veth%d", host_veth, sandbox_veth);
         check_error(system(cmd), cmd);
 
-        snprintf(cmd, sizeof(cmd), "ip addr add %s/24 dev veth%d", ctx.veth_ip_pair.host, host_veth);
+        snprintf(cmd, sizeof(cmd), "ip addr add %s/28 dev veth%d", ctx.veth_ip_pair.host, host_veth);
         check_error(system(cmd), cmd);
 
         snprintf(cmd, sizeof(cmd), "ip link set veth%d up", host_veth);
@@ -337,7 +337,7 @@ int main(int argc, char *argv[]) {
         snprintf(cmd, sizeof(cmd), "ip link set veth%d netns %d", sandbox_veth, child_pid);
         check_error(system(cmd), cmd);
 
-        snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip addr add %s/24 dev veth%d", child_pid, ctx.veth_ip_pair.sandbox, sandbox_veth);
+        snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip addr add %s/28 dev veth%d", child_pid, ctx.veth_ip_pair.sandbox, sandbox_veth);
         check_error(system(cmd), cmd);
 
         snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip link set veth%d up", child_pid, sandbox_veth);

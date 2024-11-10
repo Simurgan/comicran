@@ -6,6 +6,12 @@
 
 int main(int argc, char const *argv[])
 {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <PORT> <IP_ADDRESS>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    const char *IP_ADDRESS = argv[2];
     const int PORT = atoi(argv[1]);
     const int BUFFER_SIZE = 1024;
     int sockfd;
@@ -23,8 +29,14 @@ int main(int argc, char const *argv[])
     // Set up server address structure
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(PORT);
+
+    // Convert the IP address from text to binary form
+    if (inet_pton(AF_INET, IP_ADDRESS, &server_addr.sin_addr) <= 0) {
+        perror("Invalid IP address");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
 
     // Bind the socket to the server address
     if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
@@ -34,12 +46,16 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
-    printf("UDP Server is up and listening on port %d...\n", PORT);
+    printf("UDP Server is up and listening on IP %s port %d...\n", IP_ADDRESS, PORT);
 
     while (1)
     {
         // Receive data from client
         int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&client_addr, &client_len);
+        if (n < 0) {
+            perror("recvfrom");
+            continue;
+        }
         buffer[n] = '\0';
         printf("[%d] Received number: %s\n", PORT, buffer);
 
@@ -47,7 +63,7 @@ int main(int argc, char const *argv[])
         int number = atoi(buffer);
         if (number < 0)
         {
-            printf("Server shutting down...\n");
+            printf("[%d] Server shutting down...\n", PORT);
             break;
         }
         
