@@ -38,6 +38,16 @@ void check_error(int ret, const char *msg) {
     }
 }
 
+pid_t child_pid;
+
+// Handle SIGUSR1
+void terminate_child(int signo)
+{
+    if(child_pid > 0) {
+        kill(child_pid, SIGTERM);
+    }
+}
+
 // Function to create a directory and its parent directories if they do not exist
 void create_directory(const char *path) {
     char temp[256];
@@ -326,7 +336,7 @@ int main(int argc, char *argv[]) {
     check_error(stack == NULL ? -1 : 0, "malloc stack");
 
     // Unshare namespaces and create child process
-    int child_pid = clone(child_func, stack + STACK_SIZE,
+    child_pid = clone(child_func, stack + STACK_SIZE,
                           CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWPID | CLONE_NEWIPC |
                           CLONE_NEWNET | CLONE_NEWUTS | SIGCHLD,
                           &ctx);
@@ -346,6 +356,9 @@ int main(int argc, char *argv[]) {
         snprintf(cmd, sizeof(cmd), "nsenter --net=/proc/%d/ns/net ip route add default via %s", child_pid, ctx.veth_ip_pair.host);
         check_error(system(cmd), cmd);
     }
+
+
+    signal(SIGTERM, terminate_child);
 
     // Wait for the child process to finish
     check_error(waitpid(child_pid, NULL, 0), "waitpid");

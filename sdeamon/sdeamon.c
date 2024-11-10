@@ -177,10 +177,10 @@ int main() {
                 } else {
                     // Parent process
                     char cmd[1024];
-                    snprintf(cmd, sizeof(cmd), "sudo iptables -t nat -A PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
+                    snprintf(cmd, sizeof(cmd), "iptables -t nat -A PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
                     check_error(system(cmd), cmd);
 
-                    snprintf(cmd, sizeof(cmd), "sudo iptables -A FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
+                    snprintf(cmd, sizeof(cmd), "iptables -A FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
                     check_error(system(cmd), cmd);
 
                     program->child_pid = pid2;
@@ -203,39 +203,16 @@ int main() {
                 continue;
             }
 
-            // Send UDP request
-            int udp_sockfd;
-            struct sockaddr_in sandbox_addr;
-            if ((udp_sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
-                perror("socket");
-                close(new_fd);
-                continue;
-            }
-
-            sandbox_addr.sin_family = AF_INET;
-            sandbox_addr.sin_port = htons(atoi(program->root_process_arg));
-            inet_aton(program->veth_sandbox_ip, &sandbox_addr.sin_addr);
-            memset(&(sandbox_addr.sin_zero), '\0', 8);
-
-            char *message = "-1";
-            if (sendto(udp_sockfd, message, strlen(message), 0,
-                       (struct sockaddr *)&sandbox_addr, sizeof(struct sockaddr)) == -1) {
-                perror("sendto");
-                close(udp_sockfd);
-                close(new_fd);
-                continue;
-            }
-
-            close(udp_sockfd);
+            kill(program->child_pid, SIGTERM);
 
             // Wait for the child process to finish
             waitpid(program->child_pid, NULL, 0);
 
             char cmd[1024];
-            snprintf(cmd, sizeof(cmd), "sudo iptables -t nat -D PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
+            snprintf(cmd, sizeof(cmd), "iptables -t nat -D PREROUTING -p udp -d %s --dport %s -j DNAT --to-destination %s:%s", vm_ip, program->root_process_arg, program->veth_sandbox_ip, program->root_process_arg);
             check_error(system(cmd), cmd);
 
-            snprintf(cmd, sizeof(cmd), "sudo iptables -D FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
+            snprintf(cmd, sizeof(cmd), "iptables -D FORWARD -p udp -d %s --dport %s -j ACCEPT", program->veth_sandbox_ip, program->root_process_arg);
             check_error(system(cmd), cmd);
 
             // Respond to request

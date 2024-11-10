@@ -3,10 +3,16 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <signal.h>
+
+void sigterm_handler(int);
+int PORT;
 
 int main(int argc, char const *argv[])
 {
-    const int PORT = atoi(argv[1]);
+    signal(SIGTERM, sigterm_handler);
+
+    PORT = atoi(argv[1]);
     const int BUFFER_SIZE = 1024;
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
@@ -45,12 +51,6 @@ int main(int argc, char const *argv[])
 
         // Convert received data to integer and compute square
         int number = atoi(buffer);
-        if (number < 0)
-        {
-            printf("Server shutting down...\n");
-            break;
-        }
-        
         int result = number * number;
 
         // Prepare the result to send back
@@ -63,4 +63,11 @@ int main(int argc, char const *argv[])
 
     close(sockfd);
     return 0;
+}
+
+void sigterm_handler(int signo)
+{
+    // Handle SIGTERM signal
+    printf("[%d]: Received SIGTERM. Exiting...\n", PORT);
+    exit(EXIT_SUCCESS);
 }
