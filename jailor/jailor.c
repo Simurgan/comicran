@@ -174,6 +174,56 @@ int child_func(void *arg) {
     return 0;
 }
 
+/*
+// New chatgpt suggested childfunc (failed) to use pivot_root instead of chroot
+int child_func(void *arg) {
+    SandboxContext *ctx = (SandboxContext *)arg;
+
+    // Ensure you're root and have capabilities to pivot_root.
+    // Create the old_root directory inside ctx->root_dir before pivot_root:
+    char old_root_path[PATH_MAX];
+    snprintf(old_root_path, sizeof(old_root_path), "%s/old_root", ctx->root_dir);
+    mkdir(old_root_path, 0755);
+
+    // Make ctx->root_dir the current working directory:
+    check_error(chdir(ctx->root_dir), "chdir to root_dir");
+
+    // pivot_root(new_root, put_old)
+    // new_root: The new root directory (".")
+    // put_old: The directory under new_root where the old root will be placed ("old_root")
+    check_error(syscall(SYS_pivot_root, ".", "old_root"), "pivot_root");
+
+    // Now new root is ctx->root_dir. Move into it:
+    check_error(chdir("/"), "chdir to /");
+
+    // Unmount old_root to remove reference to the old root:
+    check_error(umount2("/old_root", MNT_DETACH), "umount old_root");
+    check_error(rmdir("/old_root"), "rmdir old_root");
+
+    // At this point, pivot_root has replaced chroot functionality.
+    // No need to call chroot again.
+
+    connect_symlinks(ctx);
+
+    // Prepare arguments for execv as before
+    int argc = ctx->root_process_argc + 2;
+    char **args = malloc(sizeof(char*) * argc);
+    if (!args) {
+        perror("malloc args");
+        exit(EXIT_FAILURE);
+    }
+    args[0] = ctx->root_process;
+    for (int i = 0; i < ctx->root_process_argc; ++i) {
+        args[i + 1] = ctx->root_process_args[i];
+    }
+    args[argc - 1] = NULL;
+
+    check_error(execv(ctx->root_process, args), "execv root_process");
+
+    return 0;
+}
+*/
+
 // Function to initialize configuration
 void init_config(const char *config_file_path, SandboxContext *ctx) {
     config_init(&(ctx->cfg));
