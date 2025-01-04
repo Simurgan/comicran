@@ -71,6 +71,9 @@ bash-5.2# criu dump -t 10 -D /checkpoint --shell-job --veth-pair veth105=veth205
 Error (criu/kerndat.c:705): Unable to bind a socket: Cannot assign requested address
 Error (criu/kerndat.c:1877): kerndat_tcp_repair failed when initializing kerndat.
 Error (criu/crtools.c:263): Could not initialize kernel features detection.
+
+------------------------------------------------------------------------
+
 bash-5.2# pwd
 /
 bash-5.2# mkdir /tmp

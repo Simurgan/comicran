@@ -1,0 +1,66 @@
+simurgan@overdesktop:~/Workspace/comicran/jailor$ sudo ./jailor ../config/full_config_5.cfg 
+[sudo] password for simurgan: 
+bash-5.2# mkdir /proc
+bash-5.2# mkdir /dev
+bash-5.2# mkdir /sys
+bash-5.2# mkdir /tmp
+bash-5.2# mkdir /tmp/checkpoint
+bash-5.2# pwd
+/
+bash-5.2# mount -t proc proc /proc
+bash-5.2# mount -t sysfs sysfs /sys
+bash-5.2# mount -t devtmpfs devtmpfs /dev
+bash-5.2# ip a
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+3: veth202@if4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 4e:28:e0:67:52:7a brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.2.2/28 scope global veth202
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4c28:e0ff:fe67:527a/64 scope link 
+       valid_lft forever preferred_lft forever
+bash-5.2# server 5005 &
+[1] 11
+bash-5.2# 
+PID: 11
+UDP Server is up and listening on port 5005...
+[5005] Received number: 7
+[5005] Sent result: 49
+bash-5.2# [5005] Received number: 8                                                                                                                                                 
+[5005] Sent result: 64
+ls
+dev  lib  lib64  proc  sys  tmp  usr
+bash-5.2# criu dump -t 11 -D /tmp/checkpoint --shell-job
+Error (criu/kerndat.c:705): Unable to bind a socket: Cannot assign requested address
+Error (criu/kerndat.c:1877): kerndat_tcp_repair failed when initializing kerndat.
+Error (criu/crtools.c:263): Could not initialize kernel features detection.
+bash-5.2# kill 11
+bash-5.2# [5005]: Received SIGTERM. Exiting...
+ls
+dev  lib  lib64  proc  sys  tmp  usr
+[1]+  Done                    server 5005
+bash-5.2# ip link set lo up
+bash-5.2# server 5005 &                                 
+[1] 21
+bash-5.2# 
+PID: 21
+UDP Server is up and listening on port 5005...
+[5005] Received number: 9
+[5005] Sent result: 81
+[5005] Received number: 7
+[5005] Sent result: 49
+ls
+dev  lib  lib64  proc  sys  tmp  usr
+bash-5.2# criu dump -t 21 -D /tmp/checkpoint --shell-job
+Error (criu/cr-dump.c:1664): A session leader of 21(21) is outside of its pid namespace
+Error (criu/cr-dump.c:2111): Dumping FAILED.
+bash-5.2# kill 21
+bash-5.2# [5005]: Received SIGTERM. Exiting...
+ls
+dev  lib  lib64  proc  sys  tmp  usr
+[1]+  Done                    server 5005
+bash-5.2# nohup server 5005 &
+[1] 36
+bash-5.2# bash: nohup: command not found
+exit
+exit

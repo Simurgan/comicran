@@ -1,0 +1,58 @@
+simurgan@overdesktop:~/Workspace/comicran/jailor$ sudo ./jailor ../config/full_config_5.cfg 
+[sudo] password for simurgan: 
+bash-5.2# mkdir /proc /dev /sys /tmp /tmp/checkpoint
+bash-5.2# ls
+dev  lib  lib64  proc  sys  tmp  usr
+bash-5.2# cd tmp
+bash-5.2# ls
+checkpoint
+bash-5.2# cd ..
+bash-5.2# mount -t proc proc /proc
+bash-5.2# mount -t sysfs sysfs /sys
+bash-5.2# mount -t devtmpfs devtmpfs /dev
+bash-5.2# ip link set lo up
+bash-5.2# nohup server 5005 &
+[1] 9
+bash-5.2# nohup: ignoring input and appending output to 'nohup.out'
+ps 
+    PID TTY          TIME CMD
+      1 ?        00:00:00 bash
+      9 ?        00:00:00 server
+     10 ?        00:00:00 ps
+bash-5.2# criu dump -t 9 -D /tmp/checkpoint --shell-job 
+Error (criu/cr-dump.c:1664): A session leader of 9(9) is outside of its pid namespace
+Error (criu/cr-dump.c:2111): Dumping FAILED.
+bash-5.2# ps
+    PID TTY          TIME CMD
+      1 ?        00:00:00 bash
+      9 ?        00:00:00 server
+     23 ?        00:00:00 ps
+bash-5.2# kill 9
+bash-5.2# ps
+    PID TTY          TIME CMD
+      1 ?        00:00:00 bash
+     24 ?        00:00:00 ps
+[1]+  Done                    nohup server 5005
+bash-5.2# setsid server 5005
+bash-5.2# 
+PID: 26
+UDP Server is up and listening on port 5005...
+[5005] Received number: 7
+[5005] Sent result: 49
+[5005] Received number: 4
+[5005] Sent result: 16
+ps
+    PID TTY          TIME CMD
+      1 ?        00:00:00 bash
+     27 ?        00:00:00 ps
+bash-5.2# criu dump -t 26 -D /tmp/checkpoint --shell-job
+bash-5.2# sudo criu restore -D /tmp/checkpoint --shell-job        
+sudo: you do not exist in the passwd database
+bash-5.2# criu restore -D /tmp/checkpoint --shell-job     
+[5005] Received number: 9
+[5005] Sent result: 81
+exit
+^C[5005] Received number: -8
+[5005] Sent result: 64
+^C^C^C^C^C^C^C^C^C^C^C
+[1]+  Stopped                 sudo ./jailor ../config/full_config_5.cfg

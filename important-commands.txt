@@ -1,0 +1,7 @@
+mkdir /proc /dev /sys /tmp /tmp/checkpoint
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+ip link set lo up
+criu dump -t 26 -D /tmp/checkpoint --shell-job
+criu restore -D /tmp/checkpoint --shell-job

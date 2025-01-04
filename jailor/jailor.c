@@ -407,6 +407,8 @@ int main(int argc, char *argv[]) {
 
 
     signal(SIGTERM, terminate_child);
+    signal(SIGTSTP, terminate_child);
+    signal(SIGKILL, terminate_child);
 
     // Wait for the child process to finish
     check_error(waitpid(child_pid, NULL, 0), "waitpid");
