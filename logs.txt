@@ -1,0 +1,126 @@
+bash-5.2# mount -t proc proc /proc
+mount: /proc: mount point does not exist.
+       dmesg(1) may have more information after failed mount system call.
+bash-5.2# mkdir /proc
+bash-5.2# mount -t proc proc /proc
+bash-5.2# mkdir /dev
+bash-5.2# mknod /dev/null c 1 3
+bash-5.2# chmod 666 /dev/null
+bash-5.2# mkdir /sys
+bash-5.2# mount -t sysfs sysfs /sys
+bash-5.2# server 5005 &
+[1] 10
+bash-5.2# 
+PID: 10
+UDP Server is up and listening on port 5005...
+[5005] Received number: 8
+[5005] Sent result: 64
+mkdir checkpoint                                         
+bash-5.2# criu dump -t 10 -D /checkpoint --shell-job               
+Error (criu/tun.c:85): tun: Unable to create tun: No such file or directory
+Error (criu/kerndat.c:1082): Fail to make dir /tmp/.criu.move_mount_set_group.l5gBJI: No such file or directory
+Error (criu/kerndat.c:1793): kerndat_has_move_mount_set_group failed when initializing kerndat.
+Error (criu/crtools.c:263): Could not initialize kernel features detection.
+bash-5.2# mkdir /tmp
+bash-5.2# criu dump -t 10 -D /checkpoint --shell-job
+Error (criu/tun.c:85): tun: Unable to create tun: No such file or directory
+Error (criu/kerndat.c:705): Unable to bind a socket: Cannot assign requested address
+Error (criu/kerndat.c:1877): kerndat_tcp_repair failed when initializing kerndat.
+Error (criu/crtools.c:263): Could not initialize kernel features detection.
+bash-5.2# cd /dev
+bash-5.2# ls
+null
+bash-5.2# rm null
+bash-5.2# ls
+bash-5.2# cd ..
+bash-5.2# mount -t devtmpfs devtmpfs /dev
+bash-5.2# cd /dev
+bash-5.2# ls
+autofs		 input	       null	 tty1	tty34  tty59   ttyS25	    vcs6
+block		 kmsg	       nvram	 tty10	tty35  tty6    ttyS26	    vcsa
+bsg		 kvm	       port	 tty11	tty36  tty60   ttyS27	    vcsa1
+btrfs-control	 log	       ppp	 tty12	tty37  tty61   ttyS28	    vcsa2
+bus		 loop-control  psaux	 tty13	tty38  tty62   ttyS29	    vcsa3
+cdrom		 loop0	       ptmx	 tty14	tty39  tty63   ttyS3	    vcsa4
+char		 loop1	       pts	 tty15	tty4   tty7    ttyS30	    vcsa5
+console		 loop10        random	 tty16	tty40  tty8    ttyS31	    vcsa6
+core		 loop11        rfkill	 tty17	tty41  tty9    ttyS4	    vcsu
+cpu		 loop12        rtc	 tty18	tty42  ttyS0   ttyS5	    vcsu1
+cpu_dma_latency  loop13        rtc0	 tty19	tty43  ttyS1   ttyS6	    vcsu2
+cuse		 loop14        sda	 tty2	tty44  ttyS10  ttyS7	    vcsu3
+disk		 loop15        sda1	 tty20	tty45  ttyS11  ttyS8	    vcsu4
+dma_heap	 loop2	       sda2	 tty21	tty46  ttyS12  ttyS9	    vcsu5
+dmmidi		 loop3	       sg0	 tty22	tty47  ttyS13  ttyprintk    vcsu6
+dri		 loop4	       sg1	 tty23	tty48  ttyS14  udmabuf	    vfio
+ecryptfs	 loop5	       sg2	 tty24	tty49  ttyS15  uhid	    vga_arbiter
+fb0		 loop6	       shm	 tty25	tty5   ttyS16  uinput	    vhci
+fd		 loop7	       snapshot  tty26	tty50  ttyS17  urandom	    vhost-net
+fd0		 loop8	       snd	 tty27	tty51  ttyS18  userfaultfd  vhost-vsock
+full		 loop9	       sr0	 tty28	tty52  ttyS19  userio	    vmci
+fuse		 mapper        sr1	 tty29	tty53  ttyS2   vcs	    vsock
+hidraw0		 mcelog        stderr	 tty3	tty54  ttyS20  vcs1	    zero
+hpet		 mem	       stdin	 tty30	tty55  ttyS21  vcs2	    zfs
+hugepages	 midi	       stdout	 tty31	tty56  ttyS22  vcs3
+hwrng		 mqueue        tty	 tty32	tty57  ttyS23  vcs4
+initctl		 net	       tty0	 tty33	tty58  ttyS24  vcs5
+bash-5.2# criu dump -t 10 -D /checkpoint --shell-job                            
+Error (criu/kerndat.c:705): Unable to bind a socket: Cannot assign requested address
+Error (criu/kerndat.c:1877): kerndat_tcp_repair failed when initializing kerndat.
+Error (criu/crtools.c:263): Could not initialize kernel features detection.
+bash-5.2# criu dump -t 10 -D /checkpoint --shell-job --veth-pair veth105=veth205 
+Error (criu/kerndat.c:705): Unable to bind a socket: Cannot assign requested address
+Error (criu/kerndat.c:1877): kerndat_tcp_repair failed when initializing kerndat.
+Error (criu/crtools.c:263): Could not initialize kernel features detection.
+
+------------------------------------------------------------------------
+
+bash-5.2# pwd
+/
+bash-5.2# mkdir /tmp
+bash-5.2# mkdir /tmp/checkpoint
+bash-5.2# mkdir /proc
+bash-5.2# mkdir /sys
+bash-5.2# mkdir /dev
+bash-5.2# mount -t proc proc /proc
+bash-5.2# mount -t sysfs sysfs /sys
+bash-5.2# mount -t devtmpfs devtmpfs /dev
+bash-5.2# ip a
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+29: veth205@if30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 9a:f8:66:c5:44:f9 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.5.2/28 scope global veth205
+       valid_lft forever preferred_lft forever
+    inet6 fe80::98f8:66ff:fec5:44f9/64 scope link 
+       valid_lft forever preferred_lft forever
+bash-5.2# ip link set lo up
+bash-5.2# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+29: veth205@if30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 9a:f8:66:c5:44:f9 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.5.2/28 scope global veth205
+       valid_lft forever preferred_lft forever
+    inet6 fe80::98f8:66ff:fec5:44f9/64 scope link 
+       valid_lft forever preferred_lft forever
+bash-5.2# server 5005 &                                                         
+[1] 13
+bash-5.2# 
+PID: 13
+UDP Server is up and listening on port 5005...
+[5005] Received number: 7
+[5005] Sent result: 49
+bash-5.2# criu dump -t 13 -D ^Checkpoint --shell-job                  
+bash-5.2# cd tmp
+bash-5.2# ls
+checkpoint
+bash-5.2# cd ..
+bash-5.2# pwd
+/
+bash-5.2# criu dump -t 13 -D /tmp/checkpoint --shell-job
+Error (criu/mount.c:381): mnt: No parent found for mountpoint 3405 (@./dev)
+Error (criu/cr-dump.c:2111): Dumping FAILED.

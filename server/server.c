@@ -40,6 +40,8 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
+    pid_t pid = getpid();
+    printf("\nPID: %d\n", pid);
     printf("UDP Server is up and listening on port %d...\n", PORT);
 
     while (1)
